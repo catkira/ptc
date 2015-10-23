@@ -1,0 +1,4 @@
+copyright benjamin menkuec
+license: LGPL
+
+This is a lightweight pure C++ lock-free parallel producer-transformer-consumer pattern library
