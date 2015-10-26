@@ -21,19 +21,21 @@ int main()
     
     vector<int> vals = {10,20,30,40,42,20,30,40};
     cout << "ordered" << endl;
-    auto myoptc = ptc::ordered_ptc(
-        // produce
-        [&vals]()->auto {
+    auto producer = [&vals]()->auto {
             if(vals.empty())
                 return unique_ptr<int>();
             auto ret = make_unique<int>(vals.back());
             vals.pop_back();
             return ret;
-            },
+            };
+    auto consumer = [](auto in) {cout << *in << endl;};
+    auto myoptc = ptc::ordered_ptc(
+        // produce
+        producer,
         // transform
         [](auto in)->auto {return make_unique<std::string>("fib(" + std::to_string(*in) + ") = " + std::to_string(fibonacci(*in)));},
         // consume
-        [](auto in) {cout << *in << endl;},
+        consumer,
         numThreads
         );
     myoptc->start();
@@ -43,17 +45,11 @@ int main()
     cout << "unordered" << endl;
     auto myptc = ptc::unordered_ptc(
         // produce
-        [&vals]()->auto {
-        if (vals.empty())
-            return unique_ptr<int>();
-        auto ret = make_unique<int>(vals.back());
-        vals.pop_back();
-        return ret;
-    },
+        producer,
         // transform
         [](auto in)->auto {return make_unique<std::string>("fib(" + std::to_string(*in) + ") = " + std::to_string(fibonacci(*in)));},
         // consume
-        [](auto in) {cout << *in << endl;},
+        consumer,
         numThreads
         );
     myptc->start();

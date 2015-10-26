@@ -104,6 +104,7 @@ namespace ptc
         using ItemIdPair_t = mypair<TItem*, id_t>;
 
         OrderManager(const unsigned int numSlots) : id(0), _numSlots(numSlots) {};
+
         template <typename TItem>
         auto appendOrderId(TItem item) -> mypair<TItem, id_t>*        {
             // can used relaxed here, because this function is always called
@@ -138,7 +139,7 @@ namespace ptc
 
         template <typename TTransformer, typename TItemIdPair>
         static auto callTransformer(const TTransformer& transformer, TItemIdPair&& itemIdPair) {
-            auto& newItem = transformer(std::move(std::unique_ptr<std::remove_pointer_t<decltype(itemIdPair->first)>>(itemIdPair->first)));
+            auto newItem = transformer(std::move(std::unique_ptr<std::remove_pointer_t<decltype(itemIdPair->first)>>(itemIdPair->first)));
             std::unique_ptr<ItemIdPair_t<typename std::remove_reference_t<decltype(newItem)>::element_type>> newItemIdPair;
             // reuse pair, avoid new call
             newItemIdPair.reset(reinterpret_cast<ItemIdPair_t<typename std::remove_reference_t<decltype(newItem)>::element_type>*>(itemIdPair.release()));
@@ -150,7 +151,7 @@ namespace ptc
 
     // reads read sets from hd and puts them into slots, waits if no free slots are available
     template<typename TSource, typename TOrderPolicy, typename TWaitPolicy>
-    struct Produce : private OrderManager<TOrderPolicy>
+    struct Produce : public OrderManager<TOrderPolicy>
     {
         using core_item_type = typename std::result_of_t<TSource()>::element_type;
         using item_type = typename OrderManager<TOrderPolicy>::template ItemIdPair_t<core_item_type>;
@@ -229,7 +230,7 @@ namespace ptc
                             noEmptySlot = false;
                             auto currentItem = _source();
                             if (currentItem)
-                                item.store(appendOrderId(currentItem.release()), std::memory_order_relaxed);
+                                item.store(this->appendOrderId(currentItem.release()), std::memory_order_relaxed);
                             else
                                 _eof.store(true, std::memory_order_release);
 
@@ -348,7 +349,7 @@ namespace ptc
                 _thread.join();
         }
 
-        template<typename = decltype(&std::remove_reference_t<TSink>::get_result)(TSink)>
+        template<typename Sink = TSink, typename = decltype(&std::remove_reference_t<Sink>::get_result)(Sink)>
         auto
         get_result()
         {
@@ -368,7 +369,7 @@ namespace ptc
                     nothingToDo = true;
                     for (auto& item : _tlsItems)
                     {
-                        if (is_next_item(item.load(std::memory_order_relaxed)))
+                        if (this->is_next_item(item.load(std::memory_order_relaxed)))
                         {
                             currentItemIdPair.reset(item.load(std::memory_order_relaxed));
                             item.store(nullptr, std::memory_order_release); // make the slot free again
@@ -376,7 +377,7 @@ namespace ptc
                             nothingToDo = false;
 
                             //std::this_thread::sleep_for(std::chrono::milliseconds(1));  // used for debuggin slow hd case
-                            auto temp = extractItem(std::move(currentItemIdPair));
+                            auto temp = this->extractItem(std::move(currentItemIdPair));
                             _sink(std::move(temp));
                         }
                     }
@@ -474,7 +475,7 @@ namespace ptc
             _consumer.shutDown();
         }
         
-        template <typename = decltype(&std::remove_reference_t<TSink>::get_result)(TSink)>
+        template <typename Sink = TSink, typename = decltype(&std::remove_reference_t<Sink>::get_result)(Sink)>
         auto
         get_future()
         {
