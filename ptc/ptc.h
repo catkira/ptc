@@ -86,7 +86,7 @@ namespace ptc
         }
 
         template <typename TTransformer, typename TItemIdPair>
-        static auto callTransformer(TTransformer& transformer, TItemIdPair&& itemIdPair)
+        static auto callTransformer(const TTransformer& transformer, TItemIdPair&& itemIdPair)
         {
             return std::move(transformer(std::move(itemIdPair)));
         }
@@ -137,7 +137,7 @@ namespace ptc
         }
 
         template <typename TTransformer, typename TItemIdPair>
-        static auto callTransformer(TTransformer& transformer, TItemIdPair&& itemIdPair) {
+        static auto callTransformer(const TTransformer& transformer, TItemIdPair&& itemIdPair) {
             auto& newItem = transformer(std::move(std::unique_ptr<std::remove_pointer_t<decltype(itemIdPair->first)>>(itemIdPair->first)));
             std::unique_ptr<ItemIdPair_t<typename std::remove_reference_t<decltype(newItem)>::element_type>> newItemIdPair;
             // reuse pair, avoid new call
@@ -174,7 +174,7 @@ namespace ptc
         void signalItemAvailable(const bool eof, WaitPolicy::Sleep) {}
         void signalItemAvailable(const bool eof, WaitPolicy::Semaphore){
             if (eof)  // wakeup all potentially waiting threads so that they can be joined
-                itemAvailableSemaphore.signal(_tlsItems.size());
+                itemAvailableSemaphore.signal(static_cast<int>(_tlsItems.size()));
             else
                 itemAvailableSemaphore.signal();
         }
@@ -436,7 +436,7 @@ namespace ptc
         produce_core_item_type test;
         Produce_t _producer;
 
-        TTransformer _transformer;
+        const TTransformer _transformer;
         using transform_core_item = typename std::result_of_t<TTransformer(std::unique_ptr<produce_core_item_type>)>::element_type;
         
         using Consume_t = Consume<TSink, transform_core_item, TOrderPolicy, TWaitPolicy>;
@@ -444,7 +444,7 @@ namespace ptc
         std::vector<std::thread> _threads;
 
     public:
-        PTC_unit(TSource& source, TTransformer& transformer, TSink&& sink, const unsigned int numThreads) :
+        PTC_unit(TSource& source, const TTransformer& transformer, TSink&& sink, const unsigned int numThreads) :
             _producer(source, numThreads+1), _transformer(transformer), _consumer(std::forward<TSink>(sink), numThreads+1), _threads(numThreads){};
 
         void start()
@@ -493,14 +493,14 @@ namespace ptc
     };
 
     template <typename TSource, typename TTransformer, typename TSink>
-    auto ordered_ptc(TSource&& source, TTransformer& transformer, TSink&& sink, const unsigned int numThreads)
+    auto ordered_ptc(TSource&& source, const TTransformer& transformer, TSink&& sink, const unsigned int numThreads)
     {
         return std::make_unique<PTC_unit<TSource, TTransformer, TSink, OrderPolicy::Ordered, WaitPolicy::Semaphore>>
             (std::forward<TSource>(source), transformer, std::forward<TSink>(sink), numThreads);
     }
 
     template <typename TSource, typename TTransformer, typename TSink>
-    auto unordered_ptc(TSource&& source, TTransformer& transformer, TSink&& sink, const unsigned int numThreads)
+    auto unordered_ptc(TSource&& source, const TTransformer& transformer, TSink&& sink, const unsigned int numThreads)
     {
         return std::make_unique<PTC_unit<TSource, TTransformer, TSink, OrderPolicy::Unordered, WaitPolicy::Semaphore>>
             (std::forward<TSource>(source), transformer, std::forward<TSink>(sink), numThreads);
