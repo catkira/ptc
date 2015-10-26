@@ -54,8 +54,8 @@ namespace ptc
 
     template <typename TOrderPolicy>
     struct OrderManager{
-        template <typename TItem>
-        using ItemIdPair_t = TItem;
+        template <typename TItem> // i dont know why i need this
+        using ItemIdPair_t = mypair<TItem*, int>;
     };
 
     template<>
@@ -198,7 +198,7 @@ namespace ptc
 
     public:
         Produce(TSource& source, const unsigned int numSlots, const unsigned int sleepMS = defaultSleepMS)
-            : OrderManager(numSlots), _source(source), _numSlots(numSlots), _eof(false), _sleepMS(sleepMS)
+            : OrderManager<TOrderPolicy>(numSlots), _source(source), _numSlots(numSlots), _eof(false), _sleepMS(sleepMS)
         {
             for (auto& item : _tlsItems)
                 item.store(nullptr);  // fill initialization does not work for atomics
@@ -337,7 +337,7 @@ namespace ptc
 
     public:
         Consume(TSink&& sink, const unsigned int numSlots, const unsigned int sleepMS = defaultSleepMS)
-            : OrderManager(numSlots), _sink(sink), _numSlots(numSlots), _run(false), _sleepMS(sleepMS)
+            : OrderManager<TOrderPolicy>(numSlots), _sink(sink), _numSlots(numSlots), _run(false), _sleepMS(sleepMS)
         {
             for (auto& item : _tlsItems)
                 item.store(nullptr);  // fill initialization does not work for atomics
