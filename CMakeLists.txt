@@ -23,6 +23,8 @@ endif()
 #add_library (tests tests/tests.cpp)
 add_executable(tests tests/tests.cpp ptc/ptc.h)
 
+set_property(TARGET tests PROPERTY CXX_STANDARD 14)
+
 # Set CXX flags 
 if (NOT MSVC)
 set (CMAKE_CXX_FLAGS "-pthread ${CMAKE_CXX_FLAGS}")
