@@ -140,7 +140,7 @@ namespace ptc
             auto newItem = transformer(std::move(itemIdPair->first));
             std::unique_ptr<ItemIdPair_t<decltype(newItem)>> newItemIdPair;
             // reuse pair, avoid new call
-            newItemIdPair.reset(reinterpret_cast<decltype(newItemIdPair)::element_type*>(itemIdPair.release()));
+            newItemIdPair.reset(reinterpret_cast<typename decltype(newItemIdPair)::element_type*>(itemIdPair.release()));
             newItemIdPair->first = std::move(newItem);
             return std::move(newItemIdPair);
         }
@@ -279,7 +279,7 @@ namespace ptc
                     }
                     auto insert_item = this->appendOrderId(std::move(item));
                     //this while is only active for ordered mode
-                    while (!has_space(_consumer)) {
+                    while (!this->has_space(_consumer)) {
                         // prevent banging on shared variable
                         std::this_thread::sleep_for(std::chrono::microseconds(1000/_numSlots));
                     };
