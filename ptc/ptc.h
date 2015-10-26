@@ -54,8 +54,6 @@ namespace ptc
 
     template <typename TOrderPolicy>
     struct OrderManager{
-        template <typename TItem> // i dont know why i need this
-        using ItemIdPair_t = mypair<TItem*, int>;
     };
 
     template<>
@@ -63,6 +61,7 @@ namespace ptc
     {
     public:
         OrderManager(unsigned int) {};
+
         template <typename TItem>
         using ItemIdPair_t = TItem;
 
@@ -154,7 +153,7 @@ namespace ptc
     struct Produce : private OrderManager<TOrderPolicy>
     {
         using core_item_type = typename std::result_of_t<TSource()>::element_type;
-        using item_type = ItemIdPair_t<core_item_type>;
+        using item_type = typename OrderManager<TOrderPolicy>::template ItemIdPair_t<core_item_type>;
         //using item_type = ItemIdPair_t<typename std::result_of_t<TSource()>::element_type>;
 
     private:
@@ -303,7 +302,7 @@ namespace ptc
     struct Consume : public OrderManager<TOrderPolicy>
     {
     public:
-        using item_type = ItemIdPair_t<TCoreItemType>;
+        using item_type = typename OrderManager<TOrderPolicy>::template ItemIdPair_t<TCoreItemType>;
         using ownSink = std::is_same<TSink, std::remove_reference_t<TSink>>;    // not used
     private:
         TSink& _sink;
