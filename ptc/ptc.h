@@ -11,17 +11,6 @@
 
 namespace ptc
 {
-    template<typename F, typename Ret, typename A, typename... Rest>
-    A helper(Ret(F::*)(A, Rest...));
-
-    template<typename F, typename Ret, typename A, typename... Rest>
-    A helper(Ret(F::*)(A, Rest...) const);
-    
-    template<typename F>
-    struct first_argument {
-        using type = decltype(helper(&F::operator()));
-    };
-
     template <typename T1, typename T2>
     struct mypair
     {
