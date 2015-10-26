@@ -348,8 +348,8 @@ namespace ptc
                 _thread.join();
         }
 
-        template<typename = std::result_of_t<decltype(&std::remove_reference_t<TSink>::get_result)(TSink)>>
-        std::remove_reference_t<std::result_of_t<decltype(&std::remove_reference_t<TSink>::get_result)(TSink)>>
+        template<typename = decltype(&std::remove_reference_t<TSink>::get_result)(TSink)>
+        auto
         get_result()
         {
             return _sink.get_result();
@@ -474,8 +474,8 @@ namespace ptc
             _consumer.shutDown();
         }
         
-        template <typename = std::result_of_t<decltype(&std::remove_reference_t<TSink>::get_result)(TSink)>>
-        std::future<std::remove_reference_t<std::result_of_t<decltype(&std::remove_reference_t<TSink>::get_result)(TSink)>>>
+        template <typename = decltype(&std::remove_reference_t<TSink>::get_result)(TSink)>
+        auto
         get_future()
         {
             auto f = std::async([this]() {
