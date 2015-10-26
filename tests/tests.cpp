@@ -21,7 +21,8 @@ int main()
     vector<int> vals = {10,20,30,40,50,20,30,40};
 
     unsigned int count = 0;
-    auto myptc = ptc::unordered_ptc(
+    auto myptc = ptc::ordered_ptc(
+        // produce
         [&vals]()->auto {
             if(vals.empty())
                 return unique_ptr<int>();
@@ -29,8 +30,10 @@ int main()
             vals.pop_back();
             return ret;
             },
-        [](auto&& in)->auto {return make_unique<std::string>(std::to_string(in) + " -> " + std::to_string(fibonacci(in)));},
-        [](auto&& in) {cout << in << endl;},
+        // transform
+        [](auto in)->auto {return make_unique<std::string>(std::to_string(*in) + " -> " + std::to_string(fibonacci(*in)));},
+        // consume
+        [](auto in) {cout << *in << endl;},
         numThreads
         );
     myptc->start();
