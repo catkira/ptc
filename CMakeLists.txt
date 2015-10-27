@@ -10,7 +10,7 @@ set (CMAKE_CXX_STANDARD_REQUIRED ON)
 
 find_package(Boost 1.36.0)
 if(NOT Boost_FOUND)
-    message (STATUS "  flexcat cannot be built without Boost.")
+    message (STATUS "  ptc cannot be built without Boost.")
     return ()
 endif()
 
@@ -24,6 +24,8 @@ endif()
 add_executable(tests tests/tests.cpp ptc/ptc.h)
 
 set_property(TARGET tests PROPERTY CXX_STANDARD 14)
+include_directories(${Boost_INCLUDE_DIRS})
+target_link_libraries(tests ${Boost_LIBRARIES})
 
 # Set CXX flags 
 if (NOT MSVC)

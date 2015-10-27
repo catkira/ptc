@@ -9,7 +9,7 @@
 #include <functional>
 #include <list>
 
-//#include <boost/lockfree/queue.hpp>
+#include <boost/lockfree/queue.hpp>
 
 #include "semaphore.h"
 
