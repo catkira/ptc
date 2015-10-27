@@ -18,9 +18,11 @@ unsigned int fibonacci(unsigned int n) {
 
 int main()
 {
-    const unsigned int numThreads = 1000;
-    
+    unsigned int numThreads = 10;
+    std::cout << "\nnum threads: " << numThreads << endl;
+
     vector<int> vals = {10,20,30,40,42,20,30,40};
+
     cout << "ordered" << endl;
     auto producer = [&vals]()->auto {
             if(vals.empty())
@@ -122,6 +124,65 @@ int main()
     t_end = std::chrono::steady_clock::now();
     deltaTime = std::chrono::duration_cast<std::chrono::duration<float>>(t_end - t_start).count();
     cout << endl << "done in " << deltaTime << "s" << endl;
+
+    numThreads = 1000;
+    std::cout << "\nnum threads: " << numThreads << endl;
+
+    auto ptc_unordered_benchmark2 = ptc::unordered_ptc(
+        // produce
+        produce_n_items,
+        // transform
+        [](auto in)->auto {return std::move(in);},
+        // consume
+        consumer_do_nothing,
+        numThreads
+        );
+
+    cout << endl;
+    cout << "inserting 1 million ints in unordered mode (my slots)...";
+    t_start = std::chrono::steady_clock::now();
+    ptc_unordered_benchmark2->start();
+    ptc_unordered_benchmark2->wait();
+    t_end = std::chrono::steady_clock::now();
+    deltaTime = std::chrono::duration_cast<std::chrono::duration<float>>(t_end - t_start).count();
+    cout << endl << "done in " << deltaTime << "s" << endl;
+
+    auto ptc_unordered_queue_benchmark2 = ptc::unordered_use_queue_ptc(
+        // produce
+        produce_n_items,
+        // transform
+        [](auto in)->auto {return std::move(in);},
+        // consume
+        consumer_do_nothing,
+        numThreads
+        );
+    cout << "inserting 1 million ints in unordered mode (boost lockfree queue)...";
+    t_start = std::chrono::steady_clock::now();
+    count = max_count;
+    ptc_unordered_queue_benchmark2->start();
+    ptc_unordered_queue_benchmark2->wait();
+    t_end = std::chrono::steady_clock::now();
+    deltaTime = std::chrono::duration_cast<std::chrono::duration<float>>(t_end - t_start).count();
+    cout << endl << "done in " << deltaTime << "s" << endl;
+
+    auto ptc_ordered_benchmark2 = ptc::ordered_ptc(
+        // produce
+        produce_n_items,
+        // transform
+        [](auto in)->auto {return std::move(in);},
+        // consume
+        consumer_do_nothing,
+        numThreads
+        );
+    cout << "inserting 1 million ints in ordered mode (boost lockfree queue)...";
+    t_start = std::chrono::steady_clock::now();
+    count = max_count;
+    ptc_ordered_benchmark2->start();
+    ptc_ordered_benchmark2->wait();
+    t_end = std::chrono::steady_clock::now();
+    deltaTime = std::chrono::duration_cast<std::chrono::duration<float>>(t_end - t_start).count();
+    cout << endl << "done in " << deltaTime << "s" << endl;
+
 
 
     cout << "\nHello world, I am done." << endl;
