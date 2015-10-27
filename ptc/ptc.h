@@ -531,6 +531,10 @@ namespace ptc
             _consumer.shutDown();
         }
         
+        /*
+        This function will only be enabled, if the Consumer functor has a get_result() function. 
+        So obviously, you can not get a future if you use a lambda as sink :)
+        */
         template <typename Sink = TSink, typename = decltype(&std::remove_reference_t<Sink>::get_result)(Sink)>
         auto
         get_future()
@@ -549,6 +553,9 @@ namespace ptc
 
     };
 
+    /*
+    Some convenience wrappers, same fashion like std::string
+    */
     template <typename TSource, typename TTransformer, typename TSink>
     auto ordered_ptc(TSource&& source, const TTransformer& transformer, TSink&& sink, const unsigned int numThreads)
     {
