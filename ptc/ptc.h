@@ -7,6 +7,7 @@
 
 #include <future>
 #include <functional>
+#include <list>
 #include "semaphore.h"
 
 namespace ptc
@@ -199,9 +200,14 @@ namespace ptc
             {
                 if (item.load(std::memory_order_relaxed) == nullptr)
                 {
-                    item.store(insert_item.release(), std::memory_order_relaxed);
-                    signalItemAvailable(TWaitPolicy());
-                    return std::unique_ptr<TItem>();
+                    //item.store(insert_item.release(), std::memory_order_relaxed);
+                    TItem* temp = nullptr;
+                    if (item.compare_exchange_strong(temp, insert_item.get()))
+                    {
+                        insert_item.release();
+                        signalItemAvailable(TWaitPolicy());
+                        return std::unique_ptr<TItem>();
+                    }
                 }
             }
             return std::move(insert_item);
@@ -240,7 +246,6 @@ namespace ptc
     {
         using core_item_type = typename std::result_of_t<TSource()>;
         using item_type = typename OrderManager<TOrderPolicy>::template ItemIdPair_t<core_item_type>;
-        //using item_type = ItemIdPair_t<typename std::result_of_t<TSource()>::element_type>;
 
     private:
         Slots<item_type, TWaitPolicy> _slots;
@@ -324,19 +329,16 @@ namespace ptc
         using item_type = typename OrderManager<TOrderPolicy>::template ItemIdPair_t<TCoreItemType>;
         using ownSink = std::is_same<TSink, std::remove_reference_t<TSink>>;    // not used
     private:
+        Slots<item_type, TWaitPolicy> _slots;
         TSink& _sink;
         unsigned int _numSlots;
-        std::vector<std::atomic<item_type*>> _tlsItems;
         std::thread _thread;
         std::atomic_bool _run;
 
     public:
         Consume(TSink&& sink, const unsigned int numSlots)
-            : OrderManager<TOrderPolicy>(numSlots), _sink(sink), _numSlots(numSlots), _run(false)
-        {
-            for (auto& item : _tlsItems)
-                item.store(nullptr);  // fill initialization does not work for atomics
-        }
+            : OrderManager<TOrderPolicy>(numSlots), _slots(numSlots), _sink(sink), _numSlots(numSlots), _run(false)
+        {}
         ~Consume()
         {
             _run = false;
@@ -354,32 +356,38 @@ namespace ptc
         void start()
         {
             _run = true;
-            _tlsItems = std::vector<std::atomic<item_type*>>(_numSlots);
             _thread = std::thread([this]()
             {
+                std::list<std::unique_ptr<item_type>> itemBuffer;
                 std::unique_ptr<item_type> currentItemIdPair;
                 bool nothingToDo = false;
-                while (_run.load(std::memory_order_relaxed) || !nothingToDo)
+                while (_run.load(std::memory_order_relaxed) || !itemBuffer.empty())
                 {
-                    nothingToDo = true;
-                    for (auto& item : _tlsItems)
+                    if (_slots.try_retrieve(currentItemIdPair))
                     {
-                        if (this->is_next_item(item.load(std::memory_order_relaxed)))
+                        if (this->is_next_item(currentItemIdPair.get()))
                         {
-                            currentItemIdPair.reset(item.load(std::memory_order_relaxed));
-                            item.store(nullptr, std::memory_order_release); // make the slot free again
-                            signalSlotAvailable(TWaitPolicy());
-                            nothingToDo = false;
-
-                            //std::this_thread::sleep_for(std::chrono::milliseconds(1));  // used for debuggin slow hd case
                             auto temp = this->extractItem(std::move(currentItemIdPair));
                             _sink(std::move(temp));
                         }
+                        else
+                        {
+                            itemBuffer.emplace_back(std::move(currentItemIdPair));
+                        }
+                        signalSlotAvailable(TWaitPolicy());
                     }
-                    if (nothingToDo)
-                    {
-                        //std::cout << std::this_thread::get_id() << "-4" << std::endl;
+                    else if(itemBuffer.empty()) // only in ordered mode
                         waitForItem(TWaitPolicy());
+                    else  // only in ordered mode
+                    {
+                        for (auto it = itemBuffer.begin();it != itemBuffer.end();++it)
+                        {
+                            if (this->is_next_item((*it).get()))
+                            {
+                                _sink(std::move(this->extractItem(std::move(*it))));
+                                it = itemBuffer.erase(it);
+                            }
+                        }
                     }
                 }
             });
@@ -387,24 +395,8 @@ namespace ptc
         template <typename TItem>
         void pushItem(TItem&& newItem)     // blocks until item could be added
         {
-            while (true)
-            {
-                for (auto& item : _tlsItems)
-                {
-                    if (item.load(std::memory_order_relaxed) == nullptr)
-                    {
-                        typename TItem::element_type* temp = nullptr;
-                        if (item.compare_exchange_strong(temp, newItem.get(), std::memory_order_acq_rel))  // acq_rel to make sure, that idle does not return true before all reads are written
-                        {
-                            newItem.release();
-                            signalItemAvailable(TWaitPolicy());
-                            return;
-                        }
-                    }
-                }
-                //std::cout << std::this_thread::get_id() << "-3" << std::endl;
-                waitForSlot(TWaitPolicy());
-            }
+            _slots.insert(std::move(newItem));
+            signalItemAvailable(TWaitPolicy());
         }
         void shutDown()
         {
@@ -412,13 +404,6 @@ namespace ptc
             signalItemAvailable(TWaitPolicy());
             if (_thread.joinable())
                 _thread.join();
-        }
-        bool idle() noexcept
-        {
-            for (auto& item : _tlsItems)
-                if (item.load(std::memory_order_acquire) != nullptr) // acq to make sure, that idle does not return true before all reads are written
-                    return false;
-            return true;
         }
     };
 
@@ -467,8 +452,6 @@ namespace ptc
             for (auto& _thread : _threads)
                 if (_thread.joinable())
                     _thread.join();
-            while (!_consumer.idle())  // wait until all remaining items have been consumed
-            {};
             _consumer.shutDown();
         }
         
