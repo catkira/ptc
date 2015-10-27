@@ -180,6 +180,21 @@ namespace ptc
             slotEmptySemaphore.wait();
         }
 
+        bool item_probably_available(WaitPolicy::Semaphore) {
+            /*
+            count > 0 : there are more items available than can be inserted
+            count < 0 : there are more items requested than available
+            count = 0 : even (initial state)
+            */
+            return itemAvailableSemaphore.get_count() >= 0;
+        }
+        bool item_probably_available(WaitPolicy::Spin) {
+            return true;    // dont know if item is available, so always return yes
+        }
+        bool item_probably_available(WaitPolicy::Sleep) {
+            return true;    // dont know if item is available, so always return yes
+        }
+
     };
 
 
@@ -200,9 +215,15 @@ namespace ptc
     private:
         std::vector<std::atomic<TItem*>> _items;
     public:
-        Slots(const unsigned int numSlots) : _items(numSlots) {};
+        Slots(const unsigned int numSlots) : _items(numSlots){};
 
         bool try_insert(std::unique_ptr<TItem>& insert_item) noexcept {
+            /*
+            this is a shortcut that gives a great performance boost, especially in high contention 
+            when the transformation threads are idleing
+            */
+            if (!item_probably_available(TWaitPolicy()))
+                return false;
             for (auto& item : _items)
             {
                 if (item.load(std::memory_order_relaxed) == nullptr)

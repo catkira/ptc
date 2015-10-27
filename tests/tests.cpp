@@ -18,7 +18,7 @@ unsigned int fibonacci(unsigned int n) {
 
 int main()
 {
-    const unsigned int numThreads = 10;
+    const unsigned int numThreads = 1000;
     
     vector<int> vals = {10,20,30,40,42,20,30,40};
     cout << "ordered" << endl;

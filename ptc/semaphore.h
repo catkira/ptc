@@ -3,6 +3,8 @@
 // also watch his very interesting CPPCON2014 talk about parallel programming
 // For conditions of distribution and use, see
 // https://github.com/preshing/cpp11-on-multicore/blob/master/LICENSE
+//
+// I have modified and extended the code
 //---------------------------------------------------------
 
 #ifndef __CPP11OM_SEMAPHORE_H__
@@ -206,6 +208,11 @@ public:
     {
         if (!tryWait())
             waitWithPartialSpinning();
+    }
+
+    int get_count()
+    {
+        return m_count.load(std::memory_order_relaxed);
     }
 
     void signal(int count = 1)
