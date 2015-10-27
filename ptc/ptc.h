@@ -8,6 +8,9 @@
 #include <future>
 #include <functional>
 #include <list>
+
+//#include <boost/lockfree/queue.hpp>
+
 #include "semaphore.h"
 
 namespace ptc
@@ -186,12 +189,23 @@ namespace ptc
 
     };
 
-    template<typename TItem, typename TWaitPolicy>
+
+    enum class InputPolicy
+    {
+        single,
+        multi
+    };
+    enum class OutputPolicy
+    {
+        single,
+        multi
+    };
+
+    template<typename TItem, InputPolicy inputPolicy, OutputPolicy outputPolicy, typename TWaitPolicy>
     struct Slots : private WaitManager
     {
     private:
         std::vector<std::atomic<TItem*>> _items;
-
     public:
         Slots(const unsigned int numSlots) : _items(numSlots) {};
 
@@ -200,13 +214,21 @@ namespace ptc
             {
                 if (item.load(std::memory_order_relaxed) == nullptr)
                 {
-                    //item.store(insert_item.release(), std::memory_order_relaxed);
-                    TItem* temp = nullptr;
-                    if (item.compare_exchange_strong(temp, insert_item.get()))
+                    if (inputPolicy == InputPolicy::single)
                     {
-                        insert_item.release();
+                        item.store(insert_item.release(), std::memory_order_release);
                         signalItemAvailable(TWaitPolicy());
                         return true;
+                    }
+                    else
+                    {
+                        TItem* temp = nullptr;
+                        if (item.compare_exchange_strong(temp, insert_item.get()))
+                        {
+                            insert_item.release();
+                            signalItemAvailable(TWaitPolicy());
+                            return true;
+                        }
                     }
                 }
             }
@@ -230,11 +252,21 @@ namespace ptc
             {
                 if ((temp = item.load(std::memory_order_relaxed)) != nullptr)
                 {
-                    if (item.compare_exchange_strong(temp, nullptr, std::memory_order_relaxed))
+                    if (outputPolicy == OutputPolicy::single)
                     {
                         retrieve_item.reset(temp);
+                        item.store(nullptr, std::memory_order_release);
                         signalSlotAvailable(TWaitPolicy());
                         return true;
+                    }
+                    else
+                    {
+                        if (item.compare_exchange_strong(temp, nullptr, std::memory_order_release))
+                        {
+                            retrieve_item.reset(temp);
+                            signalSlotAvailable(TWaitPolicy());
+                            return true;
+                        }
                     }
                 }
             }
@@ -243,23 +275,23 @@ namespace ptc
     };
 
     // reads read sets from hd and puts them into slots, waits if no free slots are available
-    template<typename TSource, typename TConsumer, typename TOrderPolicy, typename TWaitPolicy>
+    // todo: use lockfree queue for ordered mode instead of slot
+    template<typename TSource, typename TOrderPolicy, typename TWaitPolicy>
     struct Produce : private OrderManager<TOrderPolicy>, private WaitManager
     {
         using core_item_type = typename std::result_of_t<TSource()>;
         using item_type = typename OrderManager<TOrderPolicy>::template ItemIdPair_t<core_item_type>;
 
     private:
-        Slots<item_type, TWaitPolicy> _slots;
+        Slots<item_type, InputPolicy::single, OutputPolicy::multi, TWaitPolicy> _slots;
         TSource& _source;
-        const TConsumer& _consumer;
         unsigned int _numSlots;
         std::thread _thread;
         std::atomic_bool _eof;
 
     public:
-        Produce(TSource& source, const TConsumer& consumer, const unsigned int numSlots)
-            : OrderManager<TOrderPolicy>(numSlots), _consumer(consumer), _slots(numSlots), _source(source), _numSlots(numSlots), _eof(false)
+        Produce(TSource& source, const unsigned int numSlots)
+            : OrderManager<TOrderPolicy>(numSlots), _slots(numSlots), _source(source), _numSlots(numSlots), _eof(false)
         {}
         ~Produce()
         {
@@ -285,11 +317,6 @@ namespace ptc
                         return;
                     }
                     auto insert_item = this->appendOrderId(std::move(item));
-                    //this while is only active for ordered mode
-                    while (!this->has_space(_consumer)) {
-                        // prevent banging on shared variable
-                        std::this_thread::sleep_for(std::chrono::microseconds(1000/_numSlots));
-                    };
                     _slots.insert(std::move(insert_item));
                     signalItemAvailable(TWaitPolicy());
                 }
@@ -331,7 +358,7 @@ namespace ptc
         using item_type = typename OrderManager<TOrderPolicy>::template ItemIdPair_t<TCoreItemType>;
         using ownSink = std::is_same<TSink, std::remove_reference_t<TSink>>;    // not used
     private:
-        Slots<item_type, TWaitPolicy> _slots;
+        Slots<item_type, InputPolicy::multi, OutputPolicy::single, TWaitPolicy> _slots;
         TSink& _sink;
         unsigned int _numSlots;
         std::thread _thread;
@@ -414,8 +441,9 @@ namespace ptc
     {
     private:
         // producer needs consumer feedback in ordered mode -> slow
-        struct Dummy {};
-        using produce_core_item_type = typename Produce<TSource, Dummy, TOrderPolicy, TWaitPolicy>::core_item_type;
+        using Produce_t = Produce<TSource, TOrderPolicy, TWaitPolicy>;
+        using produce_core_item_type = typename Produce<TSource, TOrderPolicy, TWaitPolicy>::core_item_type;
+        Produce_t _producer;
 
         const TTransformer _transformer;
         using transform_core_item = typename std::result_of_t<TTransformer(produce_core_item_type)>;
@@ -423,14 +451,10 @@ namespace ptc
         using Consume_t = Consume<TSink, transform_core_item, TOrderPolicy, TWaitPolicy>;
         Consume_t _consumer;
 
-        using Produce_t = Produce<TSource, Consume_t, TOrderPolicy, TWaitPolicy>;
-        Produce_t _producer;
-
         std::vector<std::thread> _threads;
-
     public:
         PTC_unit(TSource& source, const TTransformer& transformer, TSink&& sink, const unsigned int numThreads) :
-            _transformer(transformer), _consumer(std::forward<TSink>(sink), numThreads+1), _producer(source, _consumer, numThreads + 1), _threads(numThreads){};
+            _transformer(transformer), _consumer(std::forward<TSink>(sink), numThreads+1), _producer(source, numThreads + 1), _threads(numThreads){};
 
         void start()
         {
