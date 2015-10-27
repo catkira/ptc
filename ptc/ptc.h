@@ -195,7 +195,7 @@ namespace ptc
     public:
         Slots(const unsigned int numSlots) : _items(numSlots) {};
 
-        std::unique_ptr<TItem> try_insert(std::unique_ptr<TItem>& insert_item) {
+        bool try_insert(std::unique_ptr<TItem>& insert_item) {
             for (auto& item : _items)
             {
                 if (item.load(std::memory_order_relaxed) == nullptr)
@@ -206,20 +206,22 @@ namespace ptc
                     {
                         insert_item.release();
                         signalItemAvailable(TWaitPolicy());
-                        return std::unique_ptr<TItem>();
+                        return true;
                     }
                 }
             }
-            return std::move(insert_item);
+            return false;
         }
         void insert(std::unique_ptr<TItem> item) {
             while (true)
             {
-                if (!(item = try_insert(item)))
+                if (try_insert(item))
                     return;
+                waitForSlot(TWaitPolicy());
             }
         }
-        void retrieve(TItem* item) {
+        void retrieve(std::unique_ptr<TItem>& item) {
+            // not implemented yet
             return true;
         }
         bool try_retrieve(std::unique_ptr<TItem>& retrieve_item) {
