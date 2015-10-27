@@ -141,6 +141,7 @@ int main()
     cout << endl;
     cout << "inserting 1 million ints in unordered mode (my slots)...";
     t_start = std::chrono::steady_clock::now();
+    count = max_count;
     ptc_unordered_benchmark2->start();
     ptc_unordered_benchmark2->wait();
     t_end = std::chrono::steady_clock::now();
