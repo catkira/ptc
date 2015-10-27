@@ -30,14 +30,14 @@ namespace ptc
     {
         struct Unordered {};
         struct Ordered {};
-    };
+    }
 
     namespace WaitPolicy
     {
         struct Sleep {};
         struct Semaphore {};
         struct Spin {};
-    };
+    }
     constexpr unsigned int defaultSleepMS = 10;
 
     /*
@@ -307,7 +307,7 @@ namespace ptc
     template<typename TItem, InputPolicy inputPolicy, OutputPolicy outputPolicy, typename TWaitPolicy>
     struct ContainerSelector<TItem, inputPolicy, outputPolicy, TWaitPolicy, OrderPolicy::Unordered> : public Slots<TItem, inputPolicy, outputPolicy, TWaitPolicy>
     {
-        ContainerSelector(const unsigned int size) : Slots(size) {};
+        ContainerSelector(const unsigned int size) : Slots<TItem, inputPolicy, outputPolicy, TWaitPolicy>(size) {};
     };
 
     // note: using a slot for unordered mode is marginally faster than using a lockfree queue
@@ -320,7 +320,7 @@ namespace ptc
     template<typename TItem, InputPolicy inputPolicy, OutputPolicy outputPolicy, typename TWaitPolicy>
     struct ContainerSelector<TItem, inputPolicy, outputPolicy, TWaitPolicy, OrderPolicy::Ordered> : public LockfreeQueue<TItem, TWaitPolicy>
     {
-        ContainerSelector(const unsigned int size) : LockfreeQueue(size) {};
+        ContainerSelector(const unsigned int size) : LockfreeQueue<TItem, TWaitPolicy>(size) {};
     };
 
 
@@ -440,7 +440,6 @@ namespace ptc
             {
                 std::list<std::unique_ptr<item_type>> itemBuffer;
                 std::unique_ptr<item_type> currentItemIdPair;
-                bool nothingToDo = false;
                 while (_run.load(std::memory_order_relaxed) || !itemBuffer.empty())
                 {
                     if(std::is_same<TOrderPolicy, OrderPolicy::Ordered>::value && !itemBuffer.empty())  // only in ordered mode
@@ -505,7 +504,7 @@ namespace ptc
         std::vector<std::thread> _threads;
     public:
         PTC_unit(TSource& source, const TTransformer& transformer, TSink&& sink, const unsigned int numThreads) :
-            _transformer(transformer), _consumer(std::forward<TSink>(sink), numThreads+1), _producer(source, numThreads + 1), _threads(numThreads){};
+            _producer(source, numThreads + 1), _transformer(transformer), _consumer(std::forward<TSink>(sink), numThreads+1), _threads(numThreads){};
 
         void start()
         {
