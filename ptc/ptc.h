@@ -310,6 +310,13 @@ namespace ptc
         ContainerSelector(const unsigned int size) : Slots(size) {};
     };
 
+    // note: using a slot for unordered mode is marginally faster than using a lockfree queue
+    //template<typename TItem, InputPolicy inputPolicy, OutputPolicy outputPolicy, typename TWaitPolicy>
+    //struct ContainerSelector<TItem, inputPolicy, outputPolicy, TWaitPolicy, OrderPolicy::Unordered> : public LockfreeQueue<TItem, TWaitPolicy>
+    //{
+    //    ContainerSelector(const unsigned int size) : LockfreeQueue(size) {};
+    //};
+
     template<typename TItem, InputPolicy inputPolicy, OutputPolicy outputPolicy, typename TWaitPolicy>
     struct ContainerSelector<TItem, inputPolicy, outputPolicy, TWaitPolicy, OrderPolicy::Ordered> : public LockfreeQueue<TItem, TWaitPolicy>
     {
