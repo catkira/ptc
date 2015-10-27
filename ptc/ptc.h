@@ -58,11 +58,6 @@ namespace ptc
         template <typename TItem>
         using ItemIdPair_t = typename TItem::element_type;
 
-        template <typename TDummy>
-        inline bool has_space(const TDummy&) const noexcept{
-            return true;
-        }
-
         template <typename TItem>
         auto appendOrderId(TItem item) -> TItem
         {
@@ -73,13 +68,9 @@ namespace ptc
         {
             return std::move(item);
         }
-        template <typename TNewItem>
-        bool accept_item(TNewItem&&) const noexcept {
-            return true;
-        }
 
         template <typename TItem>
-        bool is_next_item(TItem item){
+        inline bool is_next_item(TItem item) noexcept{
             return item != nullptr;
         }
 
@@ -123,13 +114,8 @@ namespace ptc
             return std::move(itemIdPair->first);
         }
 
-        template <typename TConsumer>
-        inline bool has_space(const TConsumer& consumer) const noexcept {
-            return (id.load(std::memory_order_acquire) - consumer.getId()) <= _numSlots;
-        }
-
         template <typename TItem>
-        bool is_next_item(TItem item)
+        inline bool is_next_item(TItem item)
         {
             if (item != nullptr && item->second == id.load(std::memory_order_relaxed))
             {
@@ -209,7 +195,7 @@ namespace ptc
     public:
         Slots(const unsigned int numSlots) : _items(numSlots) {};
 
-        bool try_insert(std::unique_ptr<TItem>& insert_item) {
+        bool try_insert(std::unique_ptr<TItem>& insert_item) noexcept {
             for (auto& item : _items)
             {
                 if (item.load(std::memory_order_relaxed) == nullptr)
@@ -217,7 +203,6 @@ namespace ptc
                     if (inputPolicy == InputPolicy::single)
                     {
                         item.store(insert_item.release(), std::memory_order_release);
-                        signalItemAvailable(TWaitPolicy());
                         return true;
                     }
                     else
@@ -226,7 +211,6 @@ namespace ptc
                         if (item.compare_exchange_strong(temp, insert_item.get()))
                         {
                             insert_item.release();
-                            signalItemAvailable(TWaitPolicy());
                             return true;
                         }
                     }
@@ -234,7 +218,7 @@ namespace ptc
             }
             return false;
         }
-        void insert(std::unique_ptr<TItem> item) {
+        void insert(std::unique_ptr<TItem> item) noexcept {
             while (true)
             {
                 if (try_insert(item))
@@ -246,7 +230,7 @@ namespace ptc
             // not implemented yet
             return true;
         }
-        bool try_retrieve(std::unique_ptr<TItem>& retrieve_item) {
+        bool try_retrieve(std::unique_ptr<TItem>& retrieve_item) noexcept {
             TItem* temp = nullptr;
             for (auto& item : _items)
             {
@@ -274,6 +258,66 @@ namespace ptc
         }
     };
 
+    template<typename TItem, typename TWaitPolicy>
+    struct LockfreeQueue : private WaitManager
+    {
+    private:
+        boost::lockfree::queue<TItem*, boost::lockfree::fixed_sized<true>> _queue;
+    public:
+        LockfreeQueue(const unsigned int numSlots) : _queue(numSlots) {};
+
+        bool try_insert(std::unique_ptr<TItem>& insert_item) noexcept {
+            if (_queue.push(insert_item.get()))
+                return true;
+            return false;
+        }
+        void insert(std::unique_ptr<TItem> item) noexcept {
+            while (true)
+            {
+                if (_queue.push(item.get()))
+                {
+                    item.release();
+                    return;
+                }
+                waitForSlot(TWaitPolicy());
+            }
+        }
+        void retrieve(std::unique_ptr<TItem>& item) {
+            // not implemented yet
+            return true;
+        }
+        bool try_retrieve(std::unique_ptr<TItem>& retrieve_item) noexcept {
+            TItem* temp = nullptr;
+            if (_queue.pop(temp))
+            {
+                retrieve_item.reset(temp);
+                signalSlotAvailable(TWaitPolicy());
+                return true;
+            }
+            return false;
+        }
+    };
+
+    // todo: use CRTP for better interface
+    template<typename TItem, InputPolicy inputPolicy, OutputPolicy outputPolicy, typename TWaitPolicy, typename TOrderPolicy>
+    struct ContainerSelector : public Slots<TItem, inputPolicy, outputPolicy, TWaitPolicy>
+    {
+    };
+
+    template<typename TItem, InputPolicy inputPolicy, OutputPolicy outputPolicy, typename TWaitPolicy>
+    struct ContainerSelector<TItem, inputPolicy, outputPolicy, TWaitPolicy, OrderPolicy::Unordered> : public Slots<TItem, inputPolicy, outputPolicy, TWaitPolicy>
+    {
+        ContainerSelector(const unsigned int size) : Slots(size) {};
+    };
+
+    template<typename TItem, InputPolicy inputPolicy, OutputPolicy outputPolicy, typename TWaitPolicy>
+    struct ContainerSelector<TItem, inputPolicy, outputPolicy, TWaitPolicy, OrderPolicy::Ordered> : public LockfreeQueue<TItem, TWaitPolicy>
+    {
+        ContainerSelector(const unsigned int size) : LockfreeQueue(size) {};
+    };
+
+
+
     // reads read sets from hd and puts them into slots, waits if no free slots are available
     // todo: use lockfree queue for ordered mode instead of slot
     template<typename TSource, typename TOrderPolicy, typename TWaitPolicy>
@@ -283,7 +327,7 @@ namespace ptc
         using item_type = typename OrderManager<TOrderPolicy>::template ItemIdPair_t<core_item_type>;
 
     private:
-        Slots<item_type, InputPolicy::single, OutputPolicy::multi, TWaitPolicy> _slots;
+        ContainerSelector<item_type, InputPolicy::single, OutputPolicy::multi, TWaitPolicy, TOrderPolicy> _slots;
         TSource& _source;
         unsigned int _numSlots;
         std::thread _thread;
@@ -358,7 +402,7 @@ namespace ptc
         using item_type = typename OrderManager<TOrderPolicy>::template ItemIdPair_t<TCoreItemType>;
         using ownSink = std::is_same<TSink, std::remove_reference_t<TSink>>;    // not used
     private:
-        Slots<item_type, InputPolicy::multi, OutputPolicy::single, TWaitPolicy> _slots;
+        ContainerSelector<item_type, InputPolicy::multi, OutputPolicy::single, TWaitPolicy, TOrderPolicy> _slots;
         TSink& _sink;
         unsigned int _numSlots;
         std::thread _thread;
@@ -392,6 +436,17 @@ namespace ptc
                 bool nothingToDo = false;
                 while (_run.load(std::memory_order_relaxed) || !itemBuffer.empty())
                 {
+                    if(std::is_same<TOrderPolicy, OrderPolicy::Ordered>::value && !itemBuffer.empty())  // only in ordered mode
+                    {
+                        for (auto it = itemBuffer.begin();it != itemBuffer.end();++it)
+                        {
+                            if (this->is_next_item((*it).get()))
+                            {
+                                _sink(std::move(this->extractItem(std::move(*it))));
+                                it = itemBuffer.erase(it);
+                            }
+                        }
+                    }
                     if (_slots.try_retrieve(currentItemIdPair))
                     {
                         if (this->is_next_item(currentItemIdPair.get()))
@@ -405,19 +460,8 @@ namespace ptc
                         }
                         signalSlotAvailable(TWaitPolicy());
                     }
-                    else if(itemBuffer.empty()) // only in ordered mode
+                    else if(std::is_same<TOrderPolicy, OrderPolicy::Unordered>::value || itemBuffer.empty())
                         waitForItem(TWaitPolicy());
-                    else  // only in ordered mode
-                    {
-                        for (auto it = itemBuffer.begin();it != itemBuffer.end();++it)
-                        {
-                            if (this->is_next_item((*it).get()))
-                            {
-                                _sink(std::move(this->extractItem(std::move(*it))));
-                                it = itemBuffer.erase(it);
-                            }
-                        }
-                    }
                 }
             });
         }
