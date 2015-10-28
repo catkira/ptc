@@ -204,8 +204,20 @@ namespace ptc
         single,
         multi
     };
+    enum class BlockingInsert
+    {
+        yes,
+        no
+    };
+    enum class BlockingRetrieve
+    {
+        yes,
+        no
+    };
 
-    template<typename TItem, InputPolicy inputPolicy, OutputPolicy outputPolicy, typename TWaitPolicy>
+
+    template<typename TItem, InputPolicy inputPolicy, OutputPolicy outputPolicy, typename TWaitPolicy, 
+        BlockingInsert blockingInsert = BlockingInsert::yes, BlockingRetrieve blockingRetrieve = BlockingRetrieve::yes>
     struct Slots
     {
     private:
@@ -223,7 +235,8 @@ namespace ptc
                     if (inputPolicy == InputPolicy::single)
                     {
                         item.store(insert_item.release(), std::memory_order_release);
-                        _item_available.signal();
+                        if(blockingRetrieve == BlockingRetrieve::yes)
+                            _item_available.signal();
                         return true;
                     }
                     else
@@ -232,7 +245,8 @@ namespace ptc
                         if (item.compare_exchange_strong(temp, insert_item.get()))
                         {
                             insert_item.release();
-                            _item_available.signal();
+                            if (blockingRetrieve == BlockingRetrieve::yes)
+                                _item_available.signal();
                             return true;
                         }
                     }
@@ -240,6 +254,7 @@ namespace ptc
             }
             return false;
         }
+        template<typename = std::enable_if_t<blockingInsert == BlockingInsert::yes>>
         void insert(std::unique_ptr<TItem> item) noexcept {
             while (true)
             {
@@ -248,6 +263,7 @@ namespace ptc
                 _slot_available.wait();
             }
         }
+        template<typename = std::enable_if_t<blockingRetrieve == BlockingInsert::yes>>
         void retrieve(std::unique_ptr<TItem>& item) {
             while (true)
             {
@@ -267,7 +283,8 @@ namespace ptc
                     {
                         retrieve_item.reset(temp);
                         item.store(nullptr, std::memory_order_release);
-                        _slot_available.signal();
+                        if (blockingInsert == BlockingInsert::yes)
+                            _slot_available.signal();
                         return true;
                     }
                     else
@@ -275,7 +292,8 @@ namespace ptc
                         if (item.compare_exchange_strong(temp, nullptr, std::memory_order_release))
                         {
                             retrieve_item.reset(temp);
-                            _slot_available.signal();
+                            if (blockingInsert == BlockingInsert::yes)
+                                _slot_available.signal();
                             return true;
                         }
                     }
@@ -285,7 +303,8 @@ namespace ptc
         }
     };
 
-    template<typename TItem, typename TWaitPolicy>
+    template<typename TItem, typename TWaitPolicy,
+        BlockingInsert blockingInsert = BlockingInsert::yes, BlockingRetrieve blockingRetrieve = BlockingRetrieve::yes>
     struct LockfreeQueue
     {
     private:
@@ -299,11 +318,13 @@ namespace ptc
             if (_queue.push(insert_item.get()))
             {
                 insert_item.release();
-                _item_available.signal();
+                if (blockingRetrieve == BlockingRetrieve::yes)
+                    _item_available.signal();
                 return true;
             }
             return false;
         }
+        template<typename = std::enable_if_t<blockingInsert == BlockingInsert::yes>>
         void insert(std::unique_ptr<TItem> item) noexcept {
             while (true)
             {
@@ -312,6 +333,7 @@ namespace ptc
                 _slot_available.wait();
             }
         }
+        template<typename = std::enable_if_t<blockingRetrieve == BlockingRetrieve::yes>>
         void retrieve(std::unique_ptr<TItem>& item) noexcept {
             while (true)
             {
@@ -325,7 +347,8 @@ namespace ptc
             if (_queue.pop(temp))
             {
                 retrieve_item.reset(temp);
-                _slot_available.signal();
+                if (blockingInsert == BlockingInsert::yes)
+                    _slot_available.signal();
                 return true;
             }
             return false;
@@ -339,22 +362,22 @@ namespace ptc
     };
 
     template<typename TItem, InputPolicy inputPolicy, OutputPolicy outputPolicy, typename TWaitPolicy>
-    struct ContainerSelector<TItem, inputPolicy, outputPolicy, TWaitPolicy, OrderPolicy::Unordered> : public Slots<TItem, inputPolicy, outputPolicy, TWaitPolicy>
+    struct ContainerSelector<TItem, inputPolicy, outputPolicy, TWaitPolicy, OrderPolicy::Unordered> : public Slots<TItem, inputPolicy, outputPolicy, TWaitPolicy, BlockingInsert::yes, BlockingRetrieve::no>
     {
-        ContainerSelector(const unsigned int size) : Slots<TItem, inputPolicy, outputPolicy, TWaitPolicy>(size) {};
+        ContainerSelector(const unsigned int size) : Slots<TItem, inputPolicy, outputPolicy, TWaitPolicy, BlockingInsert::yes, BlockingRetrieve::no>(size) {};
     };
 
     // note: using a slot for unordered mode is a lot faster than using a lockfree queue (depending on compiler and system)
     template<typename TItem, InputPolicy inputPolicy, OutputPolicy outputPolicy, typename TWaitPolicy>
-    struct ContainerSelector<TItem, inputPolicy, outputPolicy, TWaitPolicy, OrderPolicy::Unordered_use_queue> : public LockfreeQueue<TItem, TWaitPolicy>
+    struct ContainerSelector<TItem, inputPolicy, outputPolicy, TWaitPolicy, OrderPolicy::Unordered_use_queue> : public LockfreeQueue<TItem, TWaitPolicy, BlockingInsert::yes, BlockingRetrieve::no>
     {
-        ContainerSelector(const unsigned int size) : LockfreeQueue<TItem, TWaitPolicy>(size) {};
+        ContainerSelector(const unsigned int size) : LockfreeQueue<TItem, TWaitPolicy, BlockingInsert::yes, BlockingRetrieve::no>(size) {};
     };
 
     template<typename TItem, InputPolicy inputPolicy, OutputPolicy outputPolicy, typename TWaitPolicy>
-    struct ContainerSelector<TItem, inputPolicy, outputPolicy, TWaitPolicy, OrderPolicy::Ordered> : public LockfreeQueue<TItem, TWaitPolicy>
+    struct ContainerSelector<TItem, inputPolicy, outputPolicy, TWaitPolicy, OrderPolicy::Ordered> : public LockfreeQueue<TItem, TWaitPolicy, BlockingInsert::yes, BlockingRetrieve::no>
     {
-        ContainerSelector(const unsigned int size) : LockfreeQueue<TItem, TWaitPolicy>(size) {};
+        ContainerSelector(const unsigned int size) : LockfreeQueue<TItem, TWaitPolicy, BlockingInsert::yes, BlockingRetrieve::no>(size) {};
     };
 
     /*
