@@ -61,18 +61,18 @@ namespace ptc
         using ItemIdPair_t = typename TItem::element_type;
 
         template <typename TItem>
-        auto appendOrderId(TItem item) -> TItem
+        inline auto appendOrderId(TItem&& item) const noexcept
         {
-            return item;
+            return std::forward<TItem>(item);
         }
         template <typename TItem>
-        auto extractItem(TItem&& item) -> TItem
+        inline auto extractItem(TItem&& item) const noexcept
         {
-            return std::move(item);
+            return std::forward<TItem>(item);
         }
 
         template <typename TItem>
-        inline bool is_next_item(TItem item) noexcept{
+        inline bool is_next_item(TItem item) const noexcept{
             return item != nullptr;
         }
 
@@ -89,7 +89,7 @@ namespace ptc
     private:
         using id_t = unsigned int;
         std::atomic<id_t> id;
-        unsigned int _numSlots;
+        const unsigned int _numSlots;
     public:
         template <typename TItem>
         using ItemIdPair_t = mypair<TItem, id_t>;
@@ -110,13 +110,13 @@ namespace ptc
         }
 
         template <typename TItem>
-        auto extractItem(std::unique_ptr<TItem>&& itemIdPair) 
+        inline auto extractItem(std::unique_ptr<TItem>&& itemIdPair) const noexcept
         {
             return std::move(itemIdPair->first);
         }
 
         template <typename TItem>
-        inline bool is_next_item(TItem item)
+        inline bool is_next_item(TItem item) noexcept
         {
             if (item != nullptr && item->second == id.load(std::memory_order_relaxed))
             {
