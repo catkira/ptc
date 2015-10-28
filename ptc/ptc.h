@@ -334,20 +334,22 @@ namespace ptc
         ContainerSelector(const unsigned int size) : LockfreeQueue<TItem, TWaitPolicy>(size) {};
     };
 
-    // reads read sets from hd and puts them into slots, waits if no free slots are available
+    /*
+    reads read sets from hd and puts them into slots, waits if no free slots are available
+    */
     template<typename TSource, typename TOrderPolicy, typename TWaitPolicy>
-    struct Produce : private OrderManager<TOrderPolicy>, private WaitManager<TWaitPolicy>
+    struct Produce : private OrderManager<TOrderPolicy>, public WaitManager<TWaitPolicy>
     {
+    public:
         using core_item_type = typename std::result_of_t<TSource()>;
         using item_type = typename OrderManager<TOrderPolicy>::template ItemIdPair_t<core_item_type>;
-
     private:
         ContainerSelector<item_type, InputPolicy::single, OutputPolicy::multi, TWaitPolicy, TOrderPolicy> _slots;
         TSource& _source;
-        unsigned int _numSlots;
+        const unsigned int _numSlots;
         std::thread _thread;
         std::atomic_bool _eof;
-
+    // function declarations and definitions
     public:
         Produce(TSource& source, const unsigned int numSlots)
             : OrderManager<TOrderPolicy>(numSlots), _slots(numSlots), _source(source), _numSlots(numSlots), _eof(false)
@@ -372,12 +374,12 @@ namespace ptc
                     if (!item)
                     {
                         _eof.store(true, std::memory_order_release);
-                        WaitManager<TWaitPolicy>::signal(_numSlots);
+                        this->signal(_numSlots);
                         return;
                     }
                     auto insert_item = this->appendOrderId(std::move(item));
                     _slots.insert(std::move(insert_item));
-                    WaitManager<TWaitPolicy>::signal();
+                    this->signal();
                 }
             });
         }
@@ -395,7 +397,7 @@ namespace ptc
         {
             while (true)
             {
-                bool eof = _eof.load(std::memory_order_acquire);
+                const bool eof = _eof.load(std::memory_order_acquire);
                 if (!_slots.try_retrieve(returnItem))
                     if (!eof)
                         wait();
@@ -408,9 +410,8 @@ namespace ptc
         };
     };
 
-
     template<typename TSink, typename TCoreItemType, typename TOrderPolicy, typename TWaitPolicy>
-    struct Consume : public OrderManager<TOrderPolicy>, private WaitManager<TWaitPolicy>
+    struct Consume : private OrderManager<TOrderPolicy>, private WaitManager<TWaitPolicy>
     {
     public:
         using item_type = typename OrderManager<TOrderPolicy>::template ItemIdPair_t<TCoreItemType>;
@@ -418,10 +419,10 @@ namespace ptc
     private:
         ContainerSelector<item_type, InputPolicy::multi, OutputPolicy::single, TWaitPolicy, TOrderPolicy> _slots;
         TSink& _sink;
-        unsigned int _numSlots;
+        const unsigned int _numSlots;
         std::thread _thread;
         std::atomic_bool _run;
-
+    // function declarations and definitions
     public:
         Consume(TSink&& sink, const unsigned int numSlots)
             : OrderManager<TOrderPolicy>(numSlots), _slots(numSlots), _sink(sink), _numSlots(numSlots), _run(false)
@@ -479,8 +480,7 @@ namespace ptc
                 }
             });
         }
-        template <typename TItem>
-        void pushItem(TItem&& newItem)     // blocks until item could be added
+        void pushItem(std::unique_ptr<item_type> newItem)     // blocks until item could be added
         {
             _slots.insert(std::move(newItem));
             WaitManager<TWaitPolicy>::signal();
