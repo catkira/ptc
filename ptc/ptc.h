@@ -1,7 +1,8 @@
 // ==========================================================================
 // Author: Benjamin Menkuec <benjamin@menkuec.de>
+// Copyright 2015, Benjamin Menkuec
 // License: LGPL
-// dont remove this notices
+// dont remove this comment
 // ==========================================================================
 #pragma once
 
@@ -11,7 +12,7 @@
 
 #include <boost/lockfree/queue.hpp>
 
-#include "semaphore.h"
+#include "semaphore.h"  // by jeff preshing
 
 namespace ptc
 {
@@ -104,7 +105,6 @@ namespace ptc
             // can used relaxed here, because this function is always called
             // from the same thread
             auto current_id = id.load(std::memory_order_relaxed);   
-            //std::cout << "start id: " << current_id << std::endl;
             id.fetch_add(1, std::memory_order_relaxed);
             return std::make_unique<mypair<TItem, id_t>>(item, current_id);
         }
@@ -130,7 +130,7 @@ namespace ptc
         static auto callTransformer(const TTransformer& transformer, TItemIdPair itemIdPair) {
             auto newItem = transformer(std::move(itemIdPair->first));
             std::unique_ptr<ItemIdPair_t<decltype(newItem)>> newItemIdPair;
-            // reuse pair, avoid new call
+            // reuse pair, avoid call to allocator which would make this function not lockfree anymore
             newItemIdPair.reset(reinterpret_cast<typename decltype(newItemIdPair)::element_type*>(itemIdPair.release()));
             newItemIdPair->first = std::move(newItem);
             return std::move(newItemIdPair);
@@ -321,7 +321,7 @@ namespace ptc
         ContainerSelector(const unsigned int size) : Slots<TItem, inputPolicy, outputPolicy, TWaitPolicy>(size) {};
     };
 
-    // note: using a slot for unordered mode is marginally faster than using a lockfree queue
+    // note: using a slot for unordered mode is a lot faster than using a lockfree queue (depending on compiler and system)
     template<typename TItem, InputPolicy inputPolicy, OutputPolicy outputPolicy, typename TWaitPolicy>
     struct ContainerSelector<TItem, inputPolicy, outputPolicy, TWaitPolicy, OrderPolicy::Unordered_use_queue> : public LockfreeQueue<TItem, TWaitPolicy>
     {
@@ -333,8 +333,6 @@ namespace ptc
     {
         ContainerSelector(const unsigned int size) : LockfreeQueue<TItem, TWaitPolicy>(size) {};
     };
-
-
 
     // reads read sets from hd and puts them into slots, waits if no free slots are available
     template<typename TSource, typename TOrderPolicy, typename TWaitPolicy>
