@@ -254,7 +254,7 @@ namespace ptc
             }
             return false;
         }
-        template<typename = std::enable_if_t<blockingInsert == BlockingInsert::yes>>
+        template<BlockingInsert _bi = blockingInsert, typename = std::enable_if_t<_bi == BlockingInsert::yes>>
         void insert(std::unique_ptr<TItem> item) noexcept {
             while (true)
             {
@@ -263,7 +263,7 @@ namespace ptc
                 _slot_available.wait();
             }
         }
-        template<typename = std::enable_if_t<blockingRetrieve == BlockingInsert::yes>>
+        template<BlockingRetrieve _br = blockingRetrieve, typename = std::enable_if_t<_br == BlockingRetrieve::yes>>
         void retrieve(std::unique_ptr<TItem>& item) {
             while (true)
             {
@@ -324,7 +324,7 @@ namespace ptc
             }
             return false;
         }
-        template<typename = std::enable_if_t<blockingInsert == BlockingInsert::yes>>
+        template<BlockingInsert _bi = blockingInsert, typename = std::enable_if_t<_bi == BlockingInsert::yes>>
         void insert(std::unique_ptr<TItem> item) noexcept {
             while (true)
             {
@@ -333,7 +333,7 @@ namespace ptc
                 _slot_available.wait();
             }
         }
-        template<typename = std::enable_if_t<blockingRetrieve == BlockingRetrieve::yes>>
+        template<BlockingRetrieve _br = blockingRetrieve, typename = std::enable_if_t<_br == BlockingRetrieve::yes>>
         void retrieve(std::unique_ptr<TItem>& item) noexcept {
             while (true)
             {
