@@ -337,7 +337,6 @@ namespace ptc
 
 
     // reads read sets from hd and puts them into slots, waits if no free slots are available
-    // todo: use lockfree queue for ordered mode instead of slot
     template<typename TSource, typename TOrderPolicy, typename TWaitPolicy>
     struct Produce : private OrderManager<TOrderPolicy>, private WaitManager<TWaitPolicy>
     {
@@ -406,7 +405,6 @@ namespace ptc
                         return false;
                 else
                     return true;
-                //std::cout << std::this_thread::get_id() << "-2" << std::endl;
             }
             return false;
         };
@@ -502,7 +500,6 @@ namespace ptc
     struct PTC_unit
     {
     private:
-        // producer needs consumer feedback in ordered mode -> slow
         using Produce_t = Produce<TSource, TOrderPolicy, TWaitPolicy>;
         using produce_core_item_type = typename Produce<TSource, TOrderPolicy, TWaitPolicy>::core_item_type;
         Produce_t _producer;
