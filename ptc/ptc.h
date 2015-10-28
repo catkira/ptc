@@ -183,7 +183,6 @@ namespace ptc
         inline void signal() noexcept {}
         inline void signal(const unsigned int n) noexcept { (void)n; }
         inline void wait() noexcept {}
-        }
     };
 
     enum class InputPolicy
@@ -270,10 +269,11 @@ namespace ptc
     };
 
     template<typename TItem, typename TWaitPolicy>
-    struct LockfreeQueue : private WaitManager<TWaitPolicy>
+    struct LockfreeQueue
     {
     private:
         boost::lockfree::queue<TItem*, boost::lockfree::fixed_sized<true>> _queue;
+        WaitManager<TWaitPolicy> _slot_available;
     public:
         LockfreeQueue(const unsigned int numSlots) : _queue(numSlots) {};
 
@@ -290,7 +290,7 @@ namespace ptc
                     item.release();
                     return;
                 }
-                wait();
+                _slot_available.wait();
             }
         }
         void retrieve(std::unique_ptr<TItem>& item) {
@@ -302,7 +302,7 @@ namespace ptc
             if (_queue.pop(temp))
             {
                 retrieve_item.reset(temp);
-                signal();
+                _slot_available.signal();
                 return true;
             }
             return false;
@@ -375,12 +375,12 @@ namespace ptc
                     if (!item)
                     {
                         _eof.store(true, std::memory_order_release);
-                        signal(_numSlots);
+                        WaitManager<TWaitPolicy>::signal(_numSlots);
                         return;
                     }
                     auto insert_item = this->appendOrderId(std::move(item));
                     _slots.insert(std::move(insert_item));
-                    signal();
+                    WaitManager<TWaitPolicy>::signal();
                 }
             });
         }
@@ -487,12 +487,12 @@ namespace ptc
         void pushItem(TItem&& newItem)     // blocks until item could be added
         {
             _slots.insert(std::move(newItem));
-            signal();
+            WaitManager<TWaitPolicy>::signal();
         }
         void shutDown()
         {
             _run.store(false, std::memory_order_relaxed);
-            signal();
+            WaitManager<TWaitPolicy>::signal();
             if (_thread.joinable())
                 _thread.join();
         }
