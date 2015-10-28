@@ -21,7 +21,7 @@ endif()
 # Update the list of file names below if you add source files to your application.
 #target_include_directories (tests PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 #add_library (tests tests/tests.cpp)
-add_executable(tests tests/tests.cpp ptc/ptc.h)
+add_executable(tests tests/tests.cpp ptc/ptc.h /ptc/semaphore.h)
 
 set_property(TARGET tests PROPERTY CXX_STANDARD 14)
 include_directories(${Boost_INCLUDE_DIRS})
