@@ -161,6 +161,9 @@ namespace ptc
         inline void wait() noexcept {
             _semaphore.wait();
         }
+        inline bool probably_available() const noexcept {
+            return _semaphore.get_count() >= 0;
+        }
     };
 
     template <>
@@ -174,6 +177,9 @@ namespace ptc
         inline void wait() noexcept {
             std::this_thread::sleep_for(std::chrono::milliseconds(_sleepMS));
         }
+        inline bool probably_available() const noexcept {
+            return true;
+        }
     };
 
     template <>
@@ -183,6 +189,9 @@ namespace ptc
         inline void signal() noexcept {}
         inline void signal(const unsigned int n) noexcept { (void)n; }
         inline void wait() noexcept {}
+        inline bool probably_available() const noexcept {
+            return true;
+        }
     };
 
     enum class InputPolicy
@@ -202,6 +211,7 @@ namespace ptc
     private:
         std::vector<std::atomic<TItem*>> _items;
         WaitManager<TWaitPolicy> _slot_available;
+        WaitManager<TWaitPolicy> _item_available;
     public:
         Slots(const unsigned int numSlots) : _items(numSlots){};
 
@@ -213,6 +223,7 @@ namespace ptc
                     if (inputPolicy == InputPolicy::single)
                     {
                         item.store(insert_item.release(), std::memory_order_release);
+                        _item_available.signal();
                         return true;
                     }
                     else
@@ -221,6 +232,7 @@ namespace ptc
                         if (item.compare_exchange_strong(temp, insert_item.get()))
                         {
                             insert_item.release();
+                            _item_available.signal();
                             return true;
                         }
                     }
@@ -237,7 +249,12 @@ namespace ptc
             }
         }
         void retrieve(std::unique_ptr<TItem>& item) {
-            // not implemented yet
+            while (true)
+            {
+                if (try_retrieve(item))
+                    return;
+                _item_available.wait();
+            }
             return true;
         }
         bool try_retrieve(std::unique_ptr<TItem>& retrieve_item) noexcept {
@@ -274,28 +291,34 @@ namespace ptc
     private:
         boost::lockfree::queue<TItem*, boost::lockfree::fixed_sized<true>> _queue;
         WaitManager<TWaitPolicy> _slot_available;
+        WaitManager<TWaitPolicy> _item_available;
     public:
         LockfreeQueue(const unsigned int numSlots) : _queue(numSlots) {};
 
         bool try_insert(std::unique_ptr<TItem>& insert_item) noexcept {
             if (_queue.push(insert_item.get()))
+            {
+                insert_item.release();
+                _item_available.signal();
                 return true;
+            }
             return false;
         }
         void insert(std::unique_ptr<TItem> item) noexcept {
             while (true)
             {
-                if (_queue.push(item.get()))
-                {
-                    item.release();
+                if (try_insert(item))
                     return;
-                }
                 _slot_available.wait();
             }
         }
-        void retrieve(std::unique_ptr<TItem>& item) {
-            // not implemented yet
-            return true;
+        void retrieve(std::unique_ptr<TItem>& item) noexcept {
+            while (true)
+            {
+                if(try_retrieve(item))
+                    return true;
+                _item_available.wait();
+            }
         }
         bool try_retrieve(std::unique_ptr<TItem>& retrieve_item) noexcept {
             TItem* temp = nullptr;

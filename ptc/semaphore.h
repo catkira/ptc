@@ -210,7 +210,7 @@ public:
             waitWithPartialSpinning();
     }
 
-    int get_count()
+    inline int get_count() const noexcept
     {
         return m_count.load(std::memory_order_relaxed);
     }
