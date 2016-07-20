@@ -3,6 +3,8 @@
 #include <vector>
 #include <chrono>
 
+#include <boost/algorithm/string.hpp>
+
 #include "../ptc/ptc.h"
 
 using namespace std;
@@ -21,7 +23,7 @@ int main()
     unsigned int numThreads = 10;
     std::cout << "\nnum threads: " << numThreads << endl;
 
-    vector<int> vals = {10,20,30,40,42,20,30,40};
+    vector<int> vals = { 10,20,30,40,42,20,30,40 };
 
     cout << "ordered" << endl;
     auto producer = [&vals]()->auto {
@@ -32,13 +34,20 @@ int main()
             return ret;
             };
     auto consumer = [](auto in) {cout << *in << endl;};
+
     auto myoptc = ptc::ordered_ptc(
         // produce
-        producer,
+        [&vals]()->auto {
+        if (vals.empty())
+            return unique_ptr<int>();
+        auto ret = make_unique<int>(vals.back());
+        vals.pop_back();
+        return ret;
+        },
         // transform
         [](auto in)->auto {return make_unique<std::string>("fib(" + std::to_string(*in) + ") = " + std::to_string(fibonacci(*in)));},
         // consume
-        consumer,
+        [](auto in) {cout << *in << endl;},
         numThreads
         );
     myoptc->start();
@@ -58,10 +67,34 @@ int main()
     myptc->start();
     myptc->wait();
 
+    // example for memory reuse
+
+    unsigned count = 1000;
+    auto producerReuse = [&count](std::unique_ptr<std::string>&& usedItem)->auto {
+        if (count == 0)
+            return unique_ptr<std::string>();
+        --count;
+        if (usedItem == nullptr)  // necessary for first element
+            usedItem = make_unique<std::string>();
+        usedItem->assign("Hello World");
+        return std::move(usedItem);
+    };
+    auto myptcReuse = ptc::unordered_ptc(
+        // produce
+        producerReuse,
+        // transform
+        [](auto in)->auto {boost::to_upper(*in); return in;},
+        // consume
+        [](auto in) {cout << *in << endl; return in;},
+        numThreads
+        );
+    myptcReuse->start();
+    myptcReuse->wait();
+
     // benchmarks
 
-    const unsigned int max_count = 1000000;
-    auto count = max_count;
+    const unsigned max_count = 1000000;
+    count = max_count;
     auto produce_n_items = [&count]()->auto {
         if (count == 0)
             return unique_ptr<int>();
